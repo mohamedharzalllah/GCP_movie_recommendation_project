@@ -1,0 +1,1 @@
+lien Swagger :https://101cd6cec241bca7-dot-europe-west1.notebooks.googleusercontent.com/proxy/8000/docs
