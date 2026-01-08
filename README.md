@@ -354,3 +354,7 @@ Model versioning in cloud storage
 API and UI integration
 
 Clean Git and project structure
+
+
+
+lien Swagger :https://101cd6cec241bca7-dot-europe-west1.notebooks.googleusercontent.com/proxy/8000/docs

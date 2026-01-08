@@ -1,9 +1,6 @@
+flask
 pandas
-numpy
 google-cloud-bigquery
-google-cloud-bigquery-storage
-google-cloud-storage
-fastapi
-uvicorn
-streamlit
-streamlit-star-rating
+scikit-surprise
+db-dtypes
+gunicorn
