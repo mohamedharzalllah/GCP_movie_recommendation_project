@@ -1,89 +1,154 @@
-📂 Project Structure
+```text
 GCP_movie_recommendation_project/
 │
-├── data/
-│   ├── raw/                  # Raw datasets (movies, ratings, metadata)
-│   ├── processed/            # Cleaned & feature-engineered data
-│
-├── notebooks/
-│   ├── exploration.ipynb     # Data exploration & EDA
-│   ├── feature_engineering.ipynb
-│   └── model_training.ipynb
+├── scripts/                         # Pipeline execution scripts
+│   ├── 00_sanity_check.py           # GCP connectivity check
+│   ├── 01_extract_bq_to_gcs.py      # BigQuery → GCS ingestion
+│   ├── 02_build_curated.py          # Data cleaning & cold start
+│   └── 04_test_recommender.py       # Local recommender testing
 │
 ├── src/
-│   ├── data_ingestion/
-│   │   └── load_to_gcs.py    # Upload data to Cloud Storage
+│   ├── api/                         # API layer (FastAPI)
+│   │   ├── main.py                  # API endpoints
+│   │   ├── schemas.py               # Request / response schemas
+│   │   └── store.py                 # In-memory rating store
 │   │
-│   ├── bigquery/
-│   │   └── load_to_bq.py     # Load & transform data in BigQuery
+│   ├── data/                        # Data access & validation
+│   │   ├── bq_reader.py             # BigQuery access
+│   │   ├── gcs_io.py                # GCS read/write utilities
+│   │   ├── ratings_repository.py    # User ratings from BigQuery
+│   │   └── validate.py              # Data cleaning & validation
 │   │
-│   ├── training/
-│   │   └── train_model.py    # Train recommendation model (Vertex AI)
+│   ├── features/                    # Feature engineering
+│   │   └── cold_start.py            # Popularity-based recommender
 │   │
-│   ├── inference/
-│   │   └── predict.py        # Prediction logic
+│   ├── model/                       # Training & inference
+│   │   ├── train.py                 # Model training
+│   │   └── recommend.py             # Recommendation logic
 │   │
-│   └── api/
-│       └── main.py           # FastAPI app (Cloud Run)
+│   └── __init__.py
 │
-├── Dockerfile                # Containerization for Cloud Run
-├── requirements.txt          # Python dependencies
-├── README.md                 # Project documentation
+├── streamlit_app.py                 # Interactive UI
+├── requirements.txt                 # Python dependencies
+├── README.md                        # Project documentation
 └── .gitignore
 
 
-🔄 End-to-End Workflow :
 
-1️⃣ Data Ingestion (Cloud Storage)
-Raw movie and rating datasets are uploaded to Google Cloud Storage
-This acts as the Bronze layer (raw, immutable data)
+🔄 End-to-End Workflow
 
-2️⃣ Data Processing & Analytics (BigQuery)
-Data is loaded from GCS into BigQuery
-Cleaning, joins, and aggregations are done using SQL
-Feature tables are created:
-    User–Movie interactions
-    Rating statistics
-    Popularity metrics
+Step 0 – Environment Sanity Check**
+**Script:** `scripts/00_sanity_check.py`
 
-3️⃣ Feature Engineering
-Transform raw ratings into ML-ready features:
-    User vectors
-    Movie vectors
-    Interaction matrices
+- Verifies access to:
+  - BigQuery
+  - Cloud Storage
+- Ensures credentials and permissions are correctly configured
 
-4️⃣ Model Training (Vertex AI)
-A recommendation model is trained using Vertex AI
-Supports scalable training without managing infrastructure
-Model artifacts are stored and versioned
-ML Logic (Typical):
-    Collaborative Filtering
-    Similarity-based recommendations
-    User-item interaction modeling
+✅ Prevents silent failures later in the pipeline.
 
-5️⃣ Model Deployment (Cloud Run)
-Model is wrapped inside a FastAPI application
-Containerized using Docker
-Deployed on Cloud Run for:
-    Auto-scaling
-    Cost efficiency
-    HTTP API access
+---
 
-6️⃣ Inference & Recommendation API
-API endpoints allow:
-    Requesting movie recommendations for a user
-    Fetching similar movies
-Cloud Run communicates with:
-    Vertex AI for predictions
-    BigQuery for metadata
+Step 1 – Data Ingestion (BigQuery → GCS)**
+**Script:** `scripts/01_extract_bq_to_gcs.py`
 
-7️⃣ Frontend User Interface (Streamlit)
-A Streamlit web application is created to provide a simple and interactive user interface.
-The UI allows users to:
-    Select or enter a user ID
-    Request personalized movie recommendations
-    Explore similar movies based on a selected title
-Streamlit communicates with:
-    Cloud Run API to fetch real-time recommendations
-    Vertex AI indirectly for model inference
-    BigQuery indirectly for movie metadata and details
+- Reads:
+  - `movies` table
+  - `ratings` table
+- Source dataset: `master-ai-cloud.MoviePlatform`
+- Stores raw datasets as **Parquet files** in GCS:
+
+✅ Parquet is used for performance and ML-readiness.
+
+---
+
+Step 2 – Data Cleaning & Cold-Start Features**
+**Script:** `scripts/02_build_curated.py`
+
+#### Data Cleaning
+- Removes null values
+- Enforces correct data types
+- Filters invalid ratings
+
+**Outputs:**
+curated/movies_clean.parquet
+curated/ratings_clean.parquet
+
+#### Cold-Start Strategy
+- Computes most popular movies
+- Based on:
+  - Average rating
+  - Number of ratings
+- Stored as:
+
+✅ Guarantees recommendations for new users with no history.
+
+---
+
+Step 3 – Model Training**
+**Script:** `src/model/train.py`
+
+#### Model Type
+**Item-based Collaborative Filtering**
+
+#### Process
+1. Build user–item matrix  
+2. Compute cosine similarity between movies  
+3. Store model artifacts in GCS:
+
+models/v1/
+├── item_similarity.parquet
+├── movie_index.parquet
+└── metadata.json
+
+✅ Model versioning allows future upgrades (v2, v3…).
+
+---
+
+Step 4 – Recommendation Logic**
+**Module:** `src/model/recommend.py`
+
+#### Core Logic
+- Cold start → return popular movies
+- Split ratings:
+  - Liked (≥ 4 ⭐)
+  - Disliked (≤ 2 ⭐)
+- Compute weighted similarity scores
+- Penalize disliked movies
+- Remove already-rated items
+- Rank and return Top-N recommendations
+
+✅ Hybrid logic improves relevance compared to pure popularity.
+
+---
+
+Step 5 – API Layer**
+**Module:** `src/api/main.py`
+
+#### Endpoints
+- `GET /` → Health check
+- `POST /rate` → Store user rating
+- `POST /recommend` → Get recommendations
+
+#### Key Components
+- `schemas.py` → Request/response validation (Pydantic)
+- `store.py` → In-memory session ratings
+
+✅ API is stateless, scalable, and Cloud Run–ready.
+
+---
+
+Step 6 – Streamlit User Interface**
+**File:** `streamlit_app.py`
+
+#### Features
+- User ID selection
+- Live recommendations
+- Star-based rating system
+- Session + database ratings merge
+- Real-time recommendation updates
+
+✅ Makes the project demo-ready and recruiter-friendly.
+
+---
+
