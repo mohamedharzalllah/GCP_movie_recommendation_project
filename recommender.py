@@ -62,7 +62,7 @@ class MovieRecommender:
                 pred_score = self.algo.predict(user_id, m_id).est
                 
                 # Petit bonus pour les films qui cochent PLUSIEURS de vos genres préférés
-                final_score = pred_score + (len(common) * 0.5)
+                final_score = pred_score + (len(common) * 0.05)
                 
                 preds.append((m_id, min(final_score, 5.0)))
 
